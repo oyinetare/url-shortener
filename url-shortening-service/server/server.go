@@ -33,16 +33,16 @@ func (s *Server) Start() error {
 	// initialise API handler and register routes
 	shortenerAPI := api.NewUrlShortenerAPI(s.repo, s.config)
 
-	s.router.HandleFunc("/v1/shorten", shortenerAPI.ShortenHandler).Methods("POST")
-	s.router.HandleFunc("/v1/{shortCode}", shortenerAPI.RedirectHandler).Methods("GET")
+	s.router.HandleFunc("/shorten", shortenerAPI.ShortenHandler).Methods("POST")
+	s.router.HandleFunc("/{shortCode}", shortenerAPI.RedirectHandler).Methods("GET")
 
 	fmt.Printf("\n🚀 URL Shortener started on port %d\n", s.config.Port)
 	fmt.Printf("📍 Base URL: %s\n", s.config.BaseURL)
 	fmt.Printf("🔤 Short code length: %d\n\n", s.config.ShortCodeLength)
 
 	fmt.Println("API Endpoints:")
-	fmt.Println("POST /v1/shorten      - Shorten a URL")
-	fmt.Println("GET  /v1/{shortCode}  - Redirect to long URL")
+	fmt.Println("POST /shorten      - Shorten a URL")
+	fmt.Println("GET  /{shortCode}  - Redirect to long URL")
 	fmt.Println("\nExample curl command:")
 	fmt.Printf("curl -X POST %s/shorten \\\n", s.config.BaseURL)
 	fmt.Println(`  -H "Content-Type: application/json" \`)
