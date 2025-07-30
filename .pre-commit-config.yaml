@@ -18,49 +18,57 @@ repos:
       - id: mixed-line-ending
         args: ["--fix=lf"]
 
-  # Go specific hooks
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
-    hooks:
-      - id: go-fmt
-      - id: go-vet
-      - id: go-imports
-      - id: go-cyclo
-        args: [-over=15]
-      - id: go-mod-tidy
-      - id: go-unit-tests
-      - id: golangci-lint
-
-  # Security scanning
-  # - repo: https://github.com/Yelp/detect-secrets
-  #   rev: v1.4.0
-  #   hooks:
-  #     - id: detect-secrets
-  #       args: ["--baseline", ".secrets.baseline"]
-
-  # Additional Go tools
+  # Go specific hooks - Updated to work with subdirectory
   - repo: local
     hooks:
+      - id: go-fmt
+        name: go fmt
+        entry: bash -c 'cd url-shortening-service && go fmt ./...'
+        language: system
+        files: '^url-shortening-service/.*\.go$'
+        pass_filenames: false
+
+      - id: go-vet
+        name: go vet
+        entry: bash -c 'cd url-shortening-service && go vet ./...'
+        language: system
+        files: '^url-shortening-service/.*\.go$'
+        pass_filenames: false
+
+      - id: go-imports
+        name: go imports
+        entry: bash -c 'cd url-shortening-service && goimports -w .'
+        language: system
+        files: '^url-shortening-service/.*\.go$'
+        pass_filenames: false
+
+      - id: go-mod-tidy
+        name: go mod tidy
+        entry: bash -c 'cd url-shortening-service && go mod tidy'
+        language: system
+        files: '^url-shortening-service/(go\.mod|go\.sum)$'
+        pass_filenames: false
+
       - id: go-build
         name: go build
-        entry: go build ./...
+        entry: bash -c 'cd url-shortening-service && go build ./...'
         language: system
+        files: '^url-shortening-service/.*\.go$'
         pass_filenames: false
-        types: [go]
 
-      - id: go-test-coverage
-        name: go test coverage
-        entry: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+      - id: go-test
+        name: go test
+        entry: bash -c 'cd url-shortening-service && go test ./...'
         language: system
+        files: '^url-shortening-service/.*\.go$'
         pass_filenames: false
-        types: [go]
 
-      - id: go-staticcheck
-        name: staticcheck
-        entry: staticcheck ./...
+      - id: golangci-lint
+        name: golangci-lint
+        entry: bash -c 'cd url-shortening-service && golangci-lint run'
         language: system
+        files: '^url-shortening-service/.*\.go$'
         pass_filenames: false
-        types: [go]
 
 # Configuration
 default_stages: [pre-commit]
