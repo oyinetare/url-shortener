@@ -1,11 +1,12 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
-	"errors"
 	"fmt"
+	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
 
 type Repository struct {
@@ -21,44 +22,61 @@ func Connect(host, database, user, password string, port int) (*Repository, erro
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	if err := db.Ping(); err != nil {
-		return nil, err
+	// configure connection pool
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	// https://go.dev/doc/database/cancel-operations
+	// context.Context pattern for managing the lifecycle of operations and coordinated cancellation and timeout handling
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	return &Repository{db: db}, nil
 }
 
-func (r *Repository) SaveUrls(shortUrl, longUrl string) error {
+// SaveUrls saves a new URL mapping
+func (r *Repository) SaveUrls(ctx context.Context, shortUrl, longUrl string) error {
+	// using prepared statements - https://go.dev/doc/database/prepared-statements
 	query := `
 		INSERT INTO urls (shortUrl, longUrl, createdAt, clicks)
 		VALUES (?, ?, NOW(), 0)
 	`
 
-	_, err := r.db.Exec(query, shortUrl, longUrl)
+	_, err := r.db.ExecContext(ctx, query, shortUrl, longUrl)
+
 	if err != nil {
 		// Check for duplicate key error
-		// if mysqlErr, ok := err.(*mysql.MySQLError); ok && mysqlErr.Number == 1062 {
-		// 	return errors.New("short code already exists")
-		// }
+		// 1062 is MySQL's error code for duplicate entry violations on unique constraints or primary keys
+		if mysqlErr, ok := err.(*mysql.MySQLError); ok && mysqlErr.Number == MySQLDuplicateEntry {
+			return ErrDuplicateShortCode
+		}
 		return fmt.Errorf("failed to save URL: %w", err)
 	}
 
 	return nil
 }
 
-func (r *Repository) GetShortURLFromLong(longUrl string) (*URLs, error) {
+// GetShortURLFromLong retrieves a short URL by its long URL
+func (r *Repository) GetShortURLFromLong(ctx context.Context, longUrl string) (*URLs, error) {
+	// using prepared statements - https://go.dev/doc/database/prepared-statements
+	// to prevent SQL Injection, improve performance & Type Safety
 	var urls URLs
 	query := `
-		SELECT shortUrl, longUrl
+		SELECT id, shortUrl, longUrl
 		FROM urls
 		WHERE longUrl = ?
 		LIMIT 1
 	`
 
-	err := r.db.QueryRow(query, longUrl).Scan(&urls.ShortURL, &urls.LongURL)
+	err := r.db.QueryRowContext(ctx, query, longUrl).Scan(&urls.ID, &urls.ShortURL, &urls.LongURL)
 
 	if err == sql.ErrNoRows {
-		return nil, errors.New("url not found")
+		return nil, ErrURLNotFound
 	}
 
 	if err != nil {
@@ -68,19 +86,22 @@ func (r *Repository) GetShortURLFromLong(longUrl string) (*URLs, error) {
 	return &urls, nil
 }
 
-func (r *Repository) GetLongURLFromShort(shortUrl string) (*URLs, error) {
+// GetLongURLFromShort retrieves a long URL by its short URL
+func (r *Repository) GetLongURLFromShort(ctx context.Context, shortUrl string) (*URLs, error) {
+	// using prepared statements - https://go.dev/doc/database/prepared-statements
+	// to prevent SQL Injection, improve performance & Type Safety
 	var urls URLs
 	query := `
-		SELECT shortUrl, longUrl
+		SELECT id, shortUrl, longUrl
 		FROM urls
 		WHERE shortUrl = ?
 		LIMIT 1
 	`
 
-	err := r.db.QueryRow(query, shortUrl).Scan(&urls.ShortURL, &urls.LongURL)
+	err := r.db.QueryRowContext(ctx, query, shortUrl).Scan(&urls.ID, &urls.ShortURL, &urls.LongURL)
 
 	if err == sql.ErrNoRows {
-		return nil, errors.New("url not found")
+		return nil, ErrURLNotFound
 	}
 
 	if err != nil {
@@ -90,9 +111,12 @@ func (r *Repository) GetLongURLFromShort(shortUrl string) (*URLs, error) {
 	return &urls, nil
 }
 
-func (r *Repository) IncrementClicks(shortUrl string) error {
+// IncrementClicks increments the click count for a short URL
+func (r *Repository) IncrementClicks(ctx context.Context, shortUrl string) error {
+	// using prepared statements - https://go.dev/doc/database/prepared-statements
+	// to prevent SQL Injection, improve performance & Type Safety
 	query := `UPDATE urls SET clicks = clicks + 1 WHERE shortUrl = ?`
-	_, err := r.db.Exec(query, shortUrl)
+	_, err := r.db.ExecContext(ctx, query, shortUrl)
 	return err
 }
 

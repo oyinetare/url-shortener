@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/oyinetare/url-shortener/config"
 	"github.com/oyinetare/url-shortener/repository"
@@ -62,9 +64,9 @@ func (api *UrlShortenerAPI) generateShortCode(longUrl string) (string, error) {
 }
 
 // shorten creates a short URL for the given long URL
-func (api *UrlShortenerAPI) shorten(longUrl string) (string, error) {
+func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string, error) {
 	// if in hashmap return
-	existing, err := api.repo.GetShortURLFromLong(longUrl)
+	existing, err := api.repo.GetShortURLFromLong(ctx, longUrl)
 	if err != nil && existing != nil {
 		fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, existing.ShortURL)
 		return fullURL, nil
@@ -78,7 +80,7 @@ func (api *UrlShortenerAPI) shorten(longUrl string) (string, error) {
 	}
 
 	// save to db
-	err = api.repo.SaveUrls(shortCode, longUrl)
+	err = api.repo.SaveUrls(ctx, shortCode, longUrl)
 	if err != nil {
 		return "", fmt.Errorf("failed to create unique short code")
 	}
@@ -94,16 +96,26 @@ func (api *UrlShortenerAPI) ShortenHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// https://go.dev/doc/database/cancel-operations
+	// context.Context pattern for managing the lifecycle of operations and coordinated cancellation and timeout handling
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
 	var req ShortenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		api.respondWithError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	shortURL, err := api.shorten(req.LongURL)
+	shortURL, err := api.shorten(ctx, req.LongURL)
 	if err != nil {
 		log.Printf("Error shortening URL: %v", err)
-		api.respondWithError(w, http.StatusInternalServerError, "Failed to shorten URL")
+		switch err {
+		case repository.ErrInvalidURL:
+			api.respondWithError(w, http.StatusBadRequest, "Invalid URL provided")
+		default:
+			api.respondWithError(w, http.StatusInternalServerError, "Failed to shorten URL")
+		}
 		return
 	}
 
@@ -117,6 +129,12 @@ func (api *UrlShortenerAPI) ShortenHandler(w http.ResponseWriter, r *http.Reques
 
 // RedirectHandler handles GET requests to redirect to long URLs
 func (api *UrlShortenerAPI) RedirectHandler(w http.ResponseWriter, r *http.Request) {
+
+	// https://go.dev/doc/database/cancel-operations
+	// context.Context pattern for managing the lifecycle of operations and coordinated cancellation and timeout handling
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
 	// get shortCode from path
 	shortCode := strings.TrimPrefix(r.URL.Path, "/")
 	if shortCode == "" {
@@ -125,28 +143,40 @@ func (api *UrlShortenerAPI) RedirectHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	// find longUrl
-	urlData, err := api.repo.GetLongURLFromShort(shortCode)
+	urlData, err := api.repo.GetLongURLFromShort(ctx, shortCode)
 	if err != nil {
-		// use fallback if not found
-		http.NotFound(w, r)
+		switch err {
+		case repository.ErrURLNotFound:
+			// use fallback if not found
+			http.NotFound(w, r)
+		case repository.ErrInvalidURL:
+			api.respondWithError(w, http.StatusBadRequest, err.Error())
+		default:
+			log.Printf("Unexpected error: %v", err)
+			api.respondWithError(w, http.StatusInternalServerError, "Failed to retrieve URL")
+		}
 		return
 	}
 
-	// defer func() {
-	// 	if err := repo.Disconnect(); err != nil {
-	// 		log.Printf("Error disconnecting from database: %v", err)
-	// 	}
-	// }()
+	// increment click count with goroutine - best not to wait for it
+	go func() {
+		// https://go.dev/doc/database/cancel-operations
+		// context.Context pattern for managing the lifecycle of operations and coordinated cancellation and timeout handling
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
 
-	err = api.repo.IncrementClicks(shortCode)
-	if err != nil {
-		api.respondWithError(w, http.StatusBadRequest, "Problem incrementing clicks")
-	}
+		if err := api.repo.IncrementClicks(ctx, shortCode); err != nil {
+			// fire and forget with Logging
+			// not good practice to ever write to http.ResponseWriter from a goroutine after the handler returns
+			log.Printf("Failed to increment clicks for %s: %v", shortCode, err)
+		}
+	}()
 
+	// redirect to long URL
 	http.Redirect(w, r, urlData.LongURL, http.StatusFound)
 }
 
-// helper fucntion to sends a JSON response
+// respondWithJSON is helper fucntion to send a JSON response
 func (api *UrlShortenerAPI) respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -155,7 +185,7 @@ func (api *UrlShortenerAPI) respondWithJSON(w http.ResponseWriter, code int, pay
 	}
 }
 
-// respondWithError sends an error response
+// respondWithError is helper fucntion to send an error response
 func (api *UrlShortenerAPI) respondWithError(w http.ResponseWriter, code int, message string) {
 	api.respondWithJSON(w, code, ErrorResponse{Error: message})
 }
