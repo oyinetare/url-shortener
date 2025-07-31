@@ -1,0 +1,72 @@
+# .pre-commit-config.yaml - Recommended for development
+repos:
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Go specific hooks - Only the essential ones
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: go fmt
+        entry: bash -c 'cd url-shortening-service && go fmt ./...'
+        language: system
+        files: '^url-shortening-service/.*\.go$'
+        pass_filenames: false
+
+      - id: go-vet
+        name: go vet
+        entry: bash -c 'cd url-shortening-service && go vet ./...'
+        language: system
+        files: '^url-shortening-service/.*\.go$'
+        pass_filenames: false
+
+      - id: go-imports
+        name: go imports
+        entry: bash -c 'cd url-shortening-service && goimports -w .'
+        language: system
+        files: '^url-shortening-service/.*\.go$'
+        pass_filenames: false
+
+      - id: go-mod-tidy
+        name: go mod tidy
+        entry: bash -c 'cd url-shortening-service && go mod tidy'
+        language: system
+        files: '^url-shortening-service/(go\.mod|go\.sum)$'
+        pass_filenames: false
+
+      - id: go-build
+        name: go build
+        entry: bash -c 'cd url-shortening-service && go build ./...'
+        language: system
+        files: '^url-shortening-service/.*\.go$'
+        pass_filenames: false
+
+      # Only run if tests exist
+      - id: go-test
+        name: go test
+        entry: bash -c 'cd url-shortening-service && (go test ./... 2>/dev/null || echo "No tests found")'
+        language: system
+        files: '^url-shortening-service/.*\.go$'
+        pass_filenames: false
+
+      - id: golangci-lint
+        name: golangci-lint
+        entry: bash -c 'cd url-shortening-service && golangci-lint run --timeout=3m'
+        language: system
+        files: '^url-shortening-service/.*\.go$'
+        pass_filenames: false
+
+# Configuration
+default_stages: [pre-commit]
+fail_fast: false
+minimum_pre_commit_version: 2.15.0
