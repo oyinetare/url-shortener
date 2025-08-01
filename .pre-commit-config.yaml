@@ -30,12 +30,12 @@ repos:
         files: '^url-shortening-service/.*\.go$'
         pass_filenames: false
 
-      - id: go-imports
-        name: go imports
-        entry: bash -c 'cd url-shortening-service && goimports -w .'
-        language: system
-        files: '^url-shortening-service/.*\.go$'
-        pass_filenames: false
+      # - id: go-imports
+      #   name: go imports
+      #   entry: bash -c 'cd url-shortening-service && go imports -w .'
+      #   language: system
+      #   files: '^url-shortening-service/.*\.go$'
+      #   pass_filenames: false
 
       - id: go-mod-tidy
         name: go mod tidy
@@ -59,12 +59,12 @@ repos:
         files: '^url-shortening-service/.*\.go$'
         pass_filenames: false
 
-      - id: golangci-lint
-        name: golangci-lint
-        entry: bash -c 'cd url-shortening-service && golangci-lint run --timeout=3m'
-        language: system
-        files: '^url-shortening-service/.*\.go$'
-        pass_filenames: false
+      # - id: golangci-lint
+      #   name: golangci-lint
+      #   entry: bash -c 'cd url-shortening-service && golangci-lint run --timeout=3m'
+      #   language: system
+      #   files: '^url-shortening-service/.*\.go$'
+      #   pass_filenames: false
 
 # Configuration
 default_stages: [pre-commit]

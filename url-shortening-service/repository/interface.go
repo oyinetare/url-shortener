@@ -21,9 +21,11 @@ const (
 
 // URLs represents a URL mapping
 type URLs struct {
-	ID       int64  `json:"id,omitempty"`
-	ShortURL string `json:"shortUrl"`
-	LongURL  string `json:"longUrl"`
+	ID        int64  `json:"id,omitempty"`
+	ShortURL  string `json:"shortUrl"`
+	LongURL   string `json:"longUrl"`
+	CreatedAt string `json:"createdAt,omitempty"`
+	Clicks    int    `json:"clicks,omitempty"`
 }
 
 // RepositoryInterface defines the contract for URL storage

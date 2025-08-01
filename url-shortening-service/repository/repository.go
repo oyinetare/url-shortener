@@ -28,7 +28,14 @@ func Connect(host, database, user, password string, port int) (*Repository, erro
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	// https://go.dev/doc/database/cancel-operations
-	// context.Context pattern for managing the lifecycle of operations and coordinated cancellation and timeout handling
+	// https://go.dev/blog/contex
+
+	// use context.Context pattern/package to easily pass request-scoped values, manage the lifecycle of operations,
+	// coordinate cancellation signals/cancellation propagation, graceful shutdown, timeout handling and
+	// deadlines across API boundaries to all the goroutines involved in handling a reques
+
+	// so that when a request is canceled or times out, all the goroutines working on that request should
+	// exit quickly so the system can reclaim any resources they are using.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -116,8 +123,22 @@ func (r *Repository) IncrementClicks(ctx context.Context, shortUrl string) error
 	// using prepared statements - https://go.dev/doc/database/prepared-statements
 	// to prevent SQL Injection, improve performance & Type Safety
 	query := `UPDATE urls SET clicks = clicks + 1 WHERE shortUrl = ?`
-	_, err := r.db.ExecContext(ctx, query, shortUrl)
-	return err
+	result, err := r.db.ExecContext(ctx, query, shortUrl)
+
+	if err != nil {
+		return fmt.Errorf("failed to increment clicks: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return ErrURLNotFound
+	}
+
+	return nil
 }
 
 // Disconnect closes the database connection
