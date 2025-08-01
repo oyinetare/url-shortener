@@ -1,6 +1,8 @@
 package api
 
 import (
+	"net/url"
+
 	"context"
 	"crypto/md5"
 	"encoding/base64"
@@ -17,14 +19,16 @@ import (
 
 // UrlShortenerAPI handles HTTP requests for URL shortening
 type UrlShortenerAPI struct {
-	repo   repository.RepositoryInterface
-	config *config.Config
+	repo            repository.RepositoryInterface
+	config          *config.Config
+	shortCodeLength int
 }
 
-func NewUrlShortenerAPI(repo repository.RepositoryInterface, cfg *config.Config) *UrlShortenerAPI {
+func NewUrlShortenerAPI(repo repository.RepositoryInterface, cfg *config.Config, shortCodeLength int) *UrlShortenerAPI {
 	return &UrlShortenerAPI{
-		repo:   repo,
-		config: cfg,
+		repo:            repo,
+		config:          cfg,
+		shortCodeLength: shortCodeLength,
 	}
 }
 
@@ -56,7 +60,7 @@ func (api *UrlShortenerAPI) generateShortCode(longUrl string) (string, error) {
 	encoded := base64.URLEncoding.EncodeToString(hash)
 
 	// Take first 7 characters and remove any special chars
-	shortCode := strings.ReplaceAll(encoded[:api.config.ShortCodeLength], "/", "_")
+	shortCode := strings.ReplaceAll(encoded[:api.shortCodeLength], "/", "_")
 	shortCode = strings.ReplaceAll(shortCode, "+", "-")
 	shortCode = strings.ReplaceAll(shortCode, "=", "")
 
@@ -65,24 +69,50 @@ func (api *UrlShortenerAPI) generateShortCode(longUrl string) (string, error) {
 
 // shorten creates a short URL for the given long URL
 func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string, error) {
-	// if in hashmap return
+	parsedURL, err := url.Parse(longUrl)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return "", repository.ErrInvalidURL
+	}
+
+	// check if URL already exists
 	existing, err := api.repo.GetShortURLFromLong(ctx, longUrl)
-	if err != nil && existing != nil {
+	if err == nil && existing != nil {
+		fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, existing.ShortURL)
+		return fullURL, nil
+	}
+
+	if err == nil && existing != nil {
 		fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, existing.ShortURL)
 		return fullURL, nil
 	}
 
 	// else generate shortCode with collision detection
 	var shortCode string
-	shortCode, err = api.generateShortCode(longUrl)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate short code: %w", err)
+	maxAttempts := 5
+
+	for i := 0; i < maxAttempts; i++ {
+
+		shortCode, err = api.generateShortCode(longUrl)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate short code: %w", err)
+
+		}
+
+		// try save to db
+		err = api.repo.SaveUrls(ctx, shortCode, longUrl)
+
+		if err == nil {
+			break
+		}
+
+		if err != repository.ErrDuplicateShortCode {
+			return "", err
+		}
+		// If duplicate, try again
 	}
 
-	// save to db
-	err = api.repo.SaveUrls(ctx, shortCode, longUrl)
 	if err != nil {
-		return "", fmt.Errorf("failed to create unique short code")
+		return "", fmt.Errorf("failed to create unique short code after %d attempts", maxAttempts)
 	}
 
 	fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, shortCode)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -30,15 +31,19 @@ func (s *Server) Start() error {
 	// add logging middleware
 	s.router.Use(loggingMiddleware)
 
+	var shortCodeLength int
+	flag.IntVar(&shortCodeLength, "shortCode", s.config.ShortCodeLength, "Length of the short code")
+	flag.Parse()
+
 	// initialise API handler and register routes
-	shortenerAPI := api.NewUrlShortenerAPI(s.repo, s.config)
+	shortenerAPI := api.NewUrlShortenerAPI(s.repo, s.config, shortCodeLength)
 
 	s.router.HandleFunc("/shorten", shortenerAPI.ShortenHandler).Methods("POST")
 	s.router.HandleFunc("/{shortCode}", shortenerAPI.RedirectHandler).Methods("GET")
 
 	fmt.Printf("\n🚀 URL Shortener started on port %d\n", s.config.Port)
 	fmt.Printf("📍 Base URL: %s\n", s.config.BaseURL)
-	fmt.Printf("🔤 Short code length: %d\n\n", s.config.ShortCodeLength)
+	fmt.Printf("🔤 Short code length: %d\n\n", shortCodeLength)
 
 	fmt.Println("API Endpoints:")
 	fmt.Println("POST /shorten      - Shorten a URL")
