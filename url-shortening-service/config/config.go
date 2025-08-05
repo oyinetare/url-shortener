@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -15,6 +16,7 @@ type Config struct {
 	BaseURL         string
 	ShortCodeLength int
 	DB              DBConfig
+	CacheTTL        time.Duration
 }
 
 type DBConfig struct {
@@ -50,6 +52,7 @@ func LoadConfig() *Config {
 			User:     getEnv("DATABASE_USER", "url_shorten_service"),
 			Password: getEnv("DATABASE_PASSWORD", "123"),
 		},
+		CacheTTL: getEnvAsDuration("CACHE_TTL_MINUTES", 60) * time.Minute,
 	}
 }
 
@@ -82,4 +85,9 @@ func (c *Config) GetDSN() string {
 		c.DB.Port,
 		c.DB.Database,
 	)
+}
+
+// getEnvAsDuration gets an environment variable as duration or returns a default value
+func getEnvAsDuration(key string, defaultValue int) time.Duration {
+	return time.Duration(getEnvAsInt(key, defaultValue))
 }

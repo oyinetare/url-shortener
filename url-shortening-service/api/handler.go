@@ -1,28 +1,36 @@
 package api
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
+	"github.com/oyinetare/url-shortener/cache"
 	"github.com/oyinetare/url-shortener/config"
 	"github.com/oyinetare/url-shortener/repository"
 )
 
 // UrlShortenerAPI handles HTTP requests for URL shortening
 type UrlShortenerAPI struct {
-	repo   repository.RepositoryInterface
-	config *config.Config
+	repo            repository.RepositoryInterface
+	config          *config.Config
+	shortCodeLength int
+	cache           *cache.InMemoryCache
 }
 
-func NewUrlShortenerAPI(repo repository.RepositoryInterface, cfg *config.Config) *UrlShortenerAPI {
+func NewUrlShortenerAPI(repo repository.RepositoryInterface, cfg *config.Config, shortCodeLength int) *UrlShortenerAPI {
 	return &UrlShortenerAPI{
-		repo:   repo,
-		config: cfg,
+		repo:            repo,
+		config:          cfg,
+		shortCodeLength: shortCodeLength,
+		cache:           cache.NewInMemoryCache(cfg.CacheTTL),
 	}
 }
 
@@ -54,7 +62,7 @@ func (api *UrlShortenerAPI) generateShortCode(longUrl string) (string, error) {
 	encoded := base64.URLEncoding.EncodeToString(hash)
 
 	// Take first 7 characters and remove any special chars
-	shortCode := strings.ReplaceAll(encoded[:api.config.ShortCodeLength], "/", "_")
+	shortCode := strings.ReplaceAll(encoded[:api.shortCodeLength], "/", "_")
 	shortCode = strings.ReplaceAll(shortCode, "+", "-")
 	shortCode = strings.ReplaceAll(shortCode, "=", "")
 
@@ -62,25 +70,49 @@ func (api *UrlShortenerAPI) generateShortCode(longUrl string) (string, error) {
 }
 
 // shorten creates a short URL for the given long URL
-func (api *UrlShortenerAPI) shorten(longUrl string) (string, error) {
-	// if in hashmap return
-	existing, err := api.repo.GetShortURLFromLong(longUrl)
-	if err != nil && existing != nil {
+func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string, error) {
+	// Validate URL
+	parsedURL, err := url.Parse(longUrl)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return "", repository.ErrInvalidURL
+	}
+
+	// Check if URL already exists
+	existing, err := api.repo.GetShortURLFromLong(ctx, longUrl)
+	if err == nil && existing != nil {
 		fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, existing.ShortURL)
 		return fullURL, nil
 	}
 
 	// else generate shortCode with collision detection
 	var shortCode string
-	shortCode, err = api.generateShortCode(longUrl)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate short code: %w", err)
+	maxAttempts := 5
+
+	for i := 0; i < maxAttempts; i++ {
+
+		shortCode, err = api.generateShortCode(longUrl)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate short code: %w", err)
+
+		}
+
+		// try save to db
+		err = api.repo.SaveUrls(ctx, shortCode, longUrl)
+
+		if err == nil {
+			// Cache the new mapping
+			api.cache.Set(shortCode, longUrl)
+			break
+		}
+
+		if err != repository.ErrDuplicateShortCode {
+			return "", err
+		}
+		// If duplicate, try again
 	}
 
-	// save to db
-	err = api.repo.SaveUrls(shortCode, longUrl)
 	if err != nil {
-		return "", fmt.Errorf("failed to create unique short code")
+		return "", fmt.Errorf("failed to create unique short code after %d attempts", maxAttempts)
 	}
 
 	fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, shortCode)
@@ -94,16 +126,26 @@ func (api *UrlShortenerAPI) ShortenHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// https://go.dev/doc/database/cancel-operations
+	// context.Context pattern for managing the lifecycle of operations and coordinated cancellation and timeout handling
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
 	var req ShortenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		api.respondWithError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	shortURL, err := api.shorten(req.LongURL)
+	shortURL, err := api.shorten(ctx, req.LongURL)
 	if err != nil {
 		log.Printf("Error shortening URL: %v", err)
-		api.respondWithError(w, http.StatusInternalServerError, "Failed to shorten URL")
+		switch err {
+		case repository.ErrInvalidURL:
+			api.respondWithError(w, http.StatusBadRequest, "Invalid URL provided")
+		default:
+			api.respondWithError(w, http.StatusInternalServerError, "Failed to shorten URL")
+		}
 		return
 	}
 
@@ -117,6 +159,12 @@ func (api *UrlShortenerAPI) ShortenHandler(w http.ResponseWriter, r *http.Reques
 
 // RedirectHandler handles GET requests to redirect to long URLs
 func (api *UrlShortenerAPI) RedirectHandler(w http.ResponseWriter, r *http.Request) {
+
+	// https://go.dev/doc/database/cancel-operations
+	// context.Context pattern for managing the lifecycle of operations and coordinated cancellation and timeout handling
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
 	// get shortCode from path
 	shortCode := strings.TrimPrefix(r.URL.Path, "/")
 	if shortCode == "" {
@@ -124,29 +172,64 @@ func (api *UrlShortenerAPI) RedirectHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// find longUrl
-	urlData, err := api.repo.GetLongURLFromShort(shortCode)
-	if err != nil {
-		// use fallback if not found
-		http.NotFound(w, r)
+	// Check cache first
+	if longURL, found := api.cache.Get(shortCode); found {
+		log.Printf("Cache hit for short code: %s", shortCode)
+
+		// Still increment clicks asynchronously
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := api.repo.IncrementClicks(ctx, shortCode); err != nil {
+				log.Printf("Failed to increment clicks for %s: %v", shortCode, err)
+			}
+		}()
+
+		http.Redirect(w, r, longURL, http.StatusFound)
 		return
 	}
 
-	// defer func() {
-	// 	if err := repo.Disconnect(); err != nil {
-	// 		log.Printf("Error disconnecting from database: %v", err)
-	// 	}
-	// }()
+	// Cache miss - fetch from database
+	log.Printf("Cache miss for short code: %s", shortCode)
 
-	err = api.repo.IncrementClicks(shortCode)
+	// find longUrl
+	urlData, err := api.repo.GetLongURLFromShort(ctx, shortCode)
 	if err != nil {
-		api.respondWithError(w, http.StatusBadRequest, "Problem incrementing clicks")
+		switch err {
+		case repository.ErrURLNotFound:
+			// use fallback if not found
+			http.NotFound(w, r)
+		case repository.ErrInvalidURL:
+			api.respondWithError(w, http.StatusBadRequest, err.Error())
+		default:
+			log.Printf("Unexpected error: %v", err)
+			api.respondWithError(w, http.StatusInternalServerError, "Failed to retrieve URL")
+		}
+		return
 	}
 
+	// Update cache
+	api.cache.Set(shortCode, urlData.LongURL)
+
+	// increment click count with goroutine - best not to wait for it
+	go func() {
+		// https://go.dev/doc/database/cancel-operations
+		// context.Context pattern for managing the lifecycle of operations and coordinated cancellation and timeout handling
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		if err := api.repo.IncrementClicks(ctx, shortCode); err != nil {
+			// fire and forget with Logging
+			// not good practice to ever write to http.ResponseWriter from a goroutine after the handler returns
+			log.Printf("Failed to increment clicks for %s: %v", shortCode, err)
+		}
+	}()
+
+	// redirect to long URL
 	http.Redirect(w, r, urlData.LongURL, http.StatusFound)
 }
 
-// helper fucntion to sends a JSON response
+// respondWithJSON is helper fucntion to send a JSON response
 func (api *UrlShortenerAPI) respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -155,7 +238,7 @@ func (api *UrlShortenerAPI) respondWithJSON(w http.ResponseWriter, code int, pay
 	}
 }
 
-// respondWithError sends an error response
+// respondWithError is helper fucntion to send an error response
 func (api *UrlShortenerAPI) respondWithError(w http.ResponseWriter, code int, message string) {
 	api.respondWithJSON(w, code, ErrorResponse{Error: message})
 }
