@@ -9,6 +9,9 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
+// Compile-time check that Repository implements RepositoryInterface
+var _ RepositoryInterface = (*Repository)(nil)
+
 type Repository struct {
 	db *sql.DB
 }

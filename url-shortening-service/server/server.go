@@ -43,7 +43,8 @@ func (s *Server) Start() error {
 
 	fmt.Printf("\n🚀 URL Shortener started on port %d\n", s.config.Port)
 	fmt.Printf("📍 Base URL: %s\n", s.config.BaseURL)
-	fmt.Printf("🔤 Short code length: %d\n\n", shortCodeLength)
+	fmt.Printf("🔤 Short code length: %d\n", shortCodeLength)
+	fmt.Printf("💾 Cache TTL: %v\n\n", s.config.CacheTTL)
 
 	fmt.Println("API Endpoints:")
 	fmt.Println("POST /shorten      - Shorten a URL")

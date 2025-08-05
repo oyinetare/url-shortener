@@ -1,8 +1,6 @@
 package api
 
 import (
-	"net/url"
-
 	"context"
 	"crypto/md5"
 	"encoding/base64"
@@ -10,9 +8,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/oyinetare/url-shortener/cache"
 	"github.com/oyinetare/url-shortener/config"
 	"github.com/oyinetare/url-shortener/repository"
 )
@@ -22,6 +22,7 @@ type UrlShortenerAPI struct {
 	repo            repository.RepositoryInterface
 	config          *config.Config
 	shortCodeLength int
+	cache           *cache.InMemoryCache
 }
 
 func NewUrlShortenerAPI(repo repository.RepositoryInterface, cfg *config.Config, shortCodeLength int) *UrlShortenerAPI {
@@ -29,6 +30,7 @@ func NewUrlShortenerAPI(repo repository.RepositoryInterface, cfg *config.Config,
 		repo:            repo,
 		config:          cfg,
 		shortCodeLength: shortCodeLength,
+		cache:           cache.NewInMemoryCache(cfg.CacheTTL),
 	}
 }
 
@@ -69,18 +71,14 @@ func (api *UrlShortenerAPI) generateShortCode(longUrl string) (string, error) {
 
 // shorten creates a short URL for the given long URL
 func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string, error) {
+	// Validate URL
 	parsedURL, err := url.Parse(longUrl)
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
 		return "", repository.ErrInvalidURL
 	}
 
-	// check if URL already exists
+	// Check if URL already exists
 	existing, err := api.repo.GetShortURLFromLong(ctx, longUrl)
-	if err == nil && existing != nil {
-		fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, existing.ShortURL)
-		return fullURL, nil
-	}
-
 	if err == nil && existing != nil {
 		fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, existing.ShortURL)
 		return fullURL, nil
@@ -102,6 +100,8 @@ func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string
 		err = api.repo.SaveUrls(ctx, shortCode, longUrl)
 
 		if err == nil {
+			// Cache the new mapping
+			api.cache.Set(shortCode, longUrl)
 			break
 		}
 
@@ -172,6 +172,26 @@ func (api *UrlShortenerAPI) RedirectHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Check cache first
+	if longURL, found := api.cache.Get(shortCode); found {
+		log.Printf("Cache hit for short code: %s", shortCode)
+
+		// Still increment clicks asynchronously
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := api.repo.IncrementClicks(ctx, shortCode); err != nil {
+				log.Printf("Failed to increment clicks for %s: %v", shortCode, err)
+			}
+		}()
+
+		http.Redirect(w, r, longURL, http.StatusFound)
+		return
+	}
+
+	// Cache miss - fetch from database
+	log.Printf("Cache miss for short code: %s", shortCode)
+
 	// find longUrl
 	urlData, err := api.repo.GetLongURLFromShort(ctx, shortCode)
 	if err != nil {
@@ -187,6 +207,9 @@ func (api *UrlShortenerAPI) RedirectHandler(w http.ResponseWriter, r *http.Reque
 		}
 		return
 	}
+
+	// Update cache
+	api.cache.Set(shortCode, urlData.LongURL)
 
 	// increment click count with goroutine - best not to wait for it
 	go func() {

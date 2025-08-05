@@ -120,6 +120,7 @@ func TestShortenHandler(t *testing.T) {
 				Port:            8080,
 				BaseURL:         "http://localhost:8080",
 				ShortCodeLength: 7,
+				CacheTTL:        time.Hour,
 			}
 			api := NewUrlShortenerAPI(mockRepo, cfg, cfg.ShortCodeLength)
 
@@ -199,6 +200,7 @@ func TestRedirectHandler(t *testing.T) {
 			cfg := &config.Config{
 				BaseURL:         "http://localhost:8080",
 				ShortCodeLength: 7,
+				CacheTTL:        time.Hour,
 			}
 			api := NewUrlShortenerAPI(mockRepo, cfg, cfg.ShortCodeLength)
 
