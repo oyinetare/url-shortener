@@ -90,15 +90,15 @@ func TestShortenHandler(t *testing.T) {
 				// "shortCode": "existing123",
 			},
 		},
-		// {
-		// 	name:           "invalid URL",
-		// 	requestBody:    `{"longUrl":"not-a-url"}`,
-		// 	mockSetup:      func(m *MockRepository) {},
-		// 	expectedStatus: http.StatusBadRequest,
-		// 	expectedBody: map[string]interface{}{
-		// 		"error": "Invalid URL provided",
-		// 	},
-		// },
+		{
+			name:           "invalid URL",
+			requestBody:    `{"longUrl":"not-a-url"}`,
+			mockSetup:      func(m *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody: map[string]interface{}{
+				"error": "Invalid URL provided",
+			},
+		},
 		{
 			name:           "invalid JSON",
 			requestBody:    `{invalid json}`,
