@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,24 +11,24 @@ import (
 	"time"
 
 	"github.com/oyinetare/url-shortener/cache"
-	"github.com/oyinetare/url-shortener/config"
+	"github.com/oyinetare/url-shortener/idgenerator"
 	"github.com/oyinetare/url-shortener/repository"
 )
 
 // UrlShortenerAPI handles HTTP requests for URL shortening
 type UrlShortenerAPI struct {
-	repo            repository.RepositoryInterface
-	config          *config.Config
-	shortCodeLength int
-	cache           *cache.InMemoryCache
+	repo        repository.RepositoryInterface
+	baseURL     string
+	idgenerator idgenerator.IDGeneratorInterface
+	cache       cache.CacheInterface
 }
 
-func NewUrlShortenerAPI(repo repository.RepositoryInterface, cfg *config.Config, shortCodeLength int) *UrlShortenerAPI {
+func NewUrlShortenerAPI(repo repository.RepositoryInterface, baseURL string, idGen idgenerator.IDGeneratorInterface, cache cache.CacheInterface) *UrlShortenerAPI {
 	return &UrlShortenerAPI{
-		repo:            repo,
-		config:          cfg,
-		shortCodeLength: shortCodeLength,
-		cache:           cache.NewInMemoryCache(cfg.CacheTTL),
+		repo:        repo,
+		baseURL:     baseURL,
+		idgenerator: idGen,
+		cache:       cache,
 	}
 }
 
@@ -50,25 +48,6 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// generateShortCode creates a random short code
-func (api *UrlShortenerAPI) generateShortCode(longUrl string) (string, error) {
-	hasher := md5.New()
-	hasher.Write([]byte(longUrl))
-	hash := hasher.Sum(nil)
-
-	// convert to base 64 helps so same number between
-	// its different number representation systems
-	// also makes URL-safe
-	encoded := base64.URLEncoding.EncodeToString(hash)
-
-	// Take first 7 characters and remove any special chars
-	shortCode := strings.ReplaceAll(encoded[:api.shortCodeLength], "/", "_")
-	shortCode = strings.ReplaceAll(shortCode, "+", "-")
-	shortCode = strings.ReplaceAll(shortCode, "=", "")
-
-	return shortCode, nil
-}
-
 // shorten creates a short URL for the given long URL
 func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string, error) {
 	// Validate URL
@@ -80,7 +59,7 @@ func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string
 	// Check if URL already exists
 	existing, err := api.repo.GetShortURLFromLong(ctx, longUrl)
 	if err == nil && existing != nil {
-		fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, existing.ShortURL)
+		fullURL := fmt.Sprintf("%s/%s", api.baseURL, existing.ShortURL)
 		return fullURL, nil
 	}
 
@@ -90,7 +69,7 @@ func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string
 
 	for i := 0; i < maxAttempts; i++ {
 
-		shortCode, err = api.generateShortCode(longUrl)
+		shortCode, err = api.idgenerator.GenerateShortCode(longUrl)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate short code: %w", err)
 
@@ -115,7 +94,7 @@ func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string
 		return "", fmt.Errorf("failed to create unique short code after %d attempts", maxAttempts)
 	}
 
-	fullURL := fmt.Sprintf("%s/%s", api.config.BaseURL, shortCode)
+	fullURL := fmt.Sprintf("%s/%s", api.baseURL, shortCode)
 	return fullURL, nil
 }
 

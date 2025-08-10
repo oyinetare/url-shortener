@@ -8,7 +8,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/oyinetare/url-shortener/api"
+	"github.com/oyinetare/url-shortener/cache"
 	"github.com/oyinetare/url-shortener/config"
+	"github.com/oyinetare/url-shortener/idgenerator"
 	"github.com/oyinetare/url-shortener/repository"
 )
 
@@ -35,8 +37,11 @@ func (s *Server) Start() error {
 	flag.IntVar(&shortCodeLength, "shortCode", s.config.ShortCodeLength, "Length of the short code")
 	flag.Parse()
 
+	idGenerator := idgenerator.NewMD5Generator(s.config.ShortCodeLength)
+	cache := cache.NewInMemoryCache(s.config.CacheTTL)
+
 	// initialise API handler and register routes
-	shortenerAPI := api.NewUrlShortenerAPI(s.repo, s.config, shortCodeLength)
+	shortenerAPI := api.NewUrlShortenerAPI(s.repo, s.config.BaseURL, idGenerator, cache)
 
 	s.router.HandleFunc("/shorten", shortenerAPI.ShortenHandler).Methods("POST")
 	s.router.HandleFunc("/{shortCode}", shortenerAPI.RedirectHandler).Methods("GET")
