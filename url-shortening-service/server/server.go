@@ -37,7 +37,8 @@ func (s *Server) Start() error {
 	flag.IntVar(&shortCodeLength, "shortCode", s.config.ShortCodeLength, "Length of the short code")
 	flag.Parse()
 
-	idGenerator := idgenerator.NewMD5Generator(s.config.ShortCodeLength)
+	// idGenerator := idgenerator.NewMD5Generator(s.config.ShortCodeLength)
+	idGenerator := idgenerator.NewSnowflakeGenerator()
 	cache := cache.NewInMemoryCache(s.config.CacheTTL)
 
 	// initialise API handler and register routes

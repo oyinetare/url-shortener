@@ -69,7 +69,7 @@ func (api *UrlShortenerAPI) shorten(ctx context.Context, longUrl string) (string
 
 	for i := 0; i < maxAttempts; i++ {
 
-		shortCode, err = api.idgenerator.GenerateShortCode(longUrl)
+		shortCode, err = api.idgenerator.GenerateShortCode()
 		if err != nil {
 			return "", fmt.Errorf("failed to generate short code: %w", err)
 

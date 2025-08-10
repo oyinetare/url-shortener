@@ -2,6 +2,7 @@ package idgenerator
 
 import (
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/base64"
 	"strings"
 )
@@ -19,16 +20,16 @@ func NewMD5Generator(shortCodeLength int) *Md5Generator {
 	}
 }
 
-// md5 hash with base64 conversion
-func (g *Md5Generator) GenerateShortCode(longUrl string) (string, error) {
+// md5 hash generation with base64 conversion
+func (g *Md5Generator) GenerateShortCode() (string, error) {
 	// Generate random bytes
-	// bytes := make([]byte, api.config.ShortCodeLength)
-	// if _, err := rand.Read(bytes); err != nil {
-	// 	return "", err
-	// }
+	bytes := make([]byte, g.shortCodeLength)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
 
 	hasher := md5.New()
-	hasher.Write([]byte(longUrl))
+	hasher.Write([]byte(bytes))
 	hash := hasher.Sum(nil)
 
 	// convert to base 64 helps so same number between
