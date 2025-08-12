@@ -119,12 +119,12 @@ func TestShortenHandler(t *testing.T) {
 			tt.mockSetup(mockRepo)
 
 			cfg := &config.Config{
-				Port:    8080,
 				BaseURL: "http://localhost:8080",
 			}
 
 			cache := cache.NewInMemoryCache(time.Hour)
-			idgenerator := idgenerator.NewMD5Generator(7)
+			// idgenerator := idgenerator.NewMD5Generator(7)
+			idgenerator := idgenerator.NewSnowflakeGenerator()
 			api := NewUrlShortenerAPI(mockRepo, cfg.BaseURL, idgenerator, cache)
 
 			// Create request
