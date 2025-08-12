@@ -30,33 +30,38 @@ The project is built with a focus on scalability, maintainability, and productio
 ## 📁 Project Structure
 
 ```
-url-shortener/
-├── api/                # HTTP handlers and API logic
-│   ├── handler.go      # Request handlers
-│   └── handler_test.go # Handler tests
-├── cache/              # In-memory caching implementation
-│   ├── cache.go        # Cache logic with TTL
-│   ├── cache_test.go   # Cache tests
-│   └── interface.go    # Cache interface
-├── config/             # Configuration management
-│   ├── config.go       # Config loader
-│   └── config_test.go  # Config tests
-├── idgenerator/        # ID generation algorithms
-│   ├── interface.go    # Generator interface
-│   ├── md5Generator.go # MD5-based generator
-│   └── snowflakeGenerator.go # Snowflake ID generator
-├── repository/         # Database access layer
-│   ├── interface.go    # Repository interface
-│   ├── repository.go   # MySQL implementation
-│   └── repository_test.go # Repository tests
-├── server/             # Server setup and middleware
-│   ├── server.go       # Server initialization
-│   └── server_test.go  # Server tests
-├── .env.example        # Environment variables template
-├── Dockerfile          # Container configuration
-├── main.go            # Application entry point
-├── setup_db.sh        # Database setup script
-└── setup.sql          # Database schema
+├── test-database/      # MySQL Docker setup
+├──── Dockerfile  
+├──── setup_db.sh        # Database setup script
+└──── setup.sql          # Database schema
+├── url-shortening-service/
+├──── api/                # HTTP handlers and API logic
+│     ├── handler.go      # Request handlers
+│     └── handler_test.go # Handler tests
+├──── cache/              # In-memory caching implementation
+│     ├── cache.go        # Cache logic with TTL
+│     ├── cache_test.go   # Cache tests
+│     └── interface.go    # Cache interface
+├──── config/             # Configuration management
+│     ├── config.go       # Config loader
+│     └── config_test.go  # Config tests
+├──── idgenerator/        # ID generation algorithms
+│     ├── interface.go    # Generator interface
+│     ├── md5Generator.go # MD5-based generator
+│     └── snowflakeGenerator.go # Snowflake ID generator
+├──── repository/         # Database access layer
+│     ├── interface.go    # Repository interface
+│     ├── repository.go   # MySQL implementation
+│     └── repository_test.go # Repository tests
+├──── server/             # Server setup and middleware
+│      ├── server.go       # Server initialization
+│      └── server_test.go  # Server tests
+├──── .env.example        # Environment variables template
+├──── Dockerfile          # Container configuration
+└──── main.go           # Database schema
+├── docker-compose.db.yml
+├── docker-compose.yml  # Service orchestration
+└── README.md           # Project documentation
 ```
 
 
