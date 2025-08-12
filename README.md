@@ -107,20 +107,16 @@ go run main.go -shortCode=7
 
 5. **Or build and run with Docker**
 ```bash
-# Build url shortening service
-docker build -t url-shortener .
-
 # Build database
 docker build -t test-db ./test-db
-```
 
-### Running Individual Containers
-
-```bash
 # Run database
 docker run --name urls_db -p 3306:3306 test-db
 
-# Run urls service (linked to database)
+# Build url shortening service
+docker build -t url-shortener .
+
+# Run url shortening service (linked to database)
 docker run --name url-shortener -p 8080:8080 --link urls_db:db -e DATABASE_HOST=db url-shortener
 ```
 
