@@ -1,4 +1,4 @@
-# url-shortener
+# url-shortener (project not complete yet)
 
 Toy URL shortener built with Go, featuring a layered architecture, MySQL database, in-memory caching, and comprehensive testing.
 
