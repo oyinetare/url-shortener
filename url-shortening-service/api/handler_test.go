@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/oyinetare/url-shortener/cache"
 	"github.com/oyinetare/url-shortener/config"
+	"github.com/oyinetare/url-shortener/idgenerator"
 	"github.com/oyinetare/url-shortener/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -90,15 +92,15 @@ func TestShortenHandler(t *testing.T) {
 				// "shortCode": "existing123",
 			},
 		},
-		// {
-		// 	name:           "invalid URL",
-		// 	requestBody:    `{"longUrl":"not-a-url"}`,
-		// 	mockSetup:      func(m *MockRepository) {},
-		// 	expectedStatus: http.StatusBadRequest,
-		// 	expectedBody: map[string]interface{}{
-		// 		"error": "Invalid URL provided",
-		// 	},
-		// },
+		{
+			name:           "invalid URL",
+			requestBody:    `{"longUrl":"not-a-url"}`,
+			mockSetup:      func(m *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody: map[string]interface{}{
+				"error": "Invalid URL provided",
+			},
+		},
 		{
 			name:           "invalid JSON",
 			requestBody:    `{invalid json}`,
@@ -117,12 +119,13 @@ func TestShortenHandler(t *testing.T) {
 			tt.mockSetup(mockRepo)
 
 			cfg := &config.Config{
-				Port:            8080,
-				BaseURL:         "http://localhost:8080",
-				ShortCodeLength: 7,
-				CacheTTL:        time.Hour,
+				BaseURL: "http://localhost:8080",
 			}
-			api := NewUrlShortenerAPI(mockRepo, cfg, cfg.ShortCodeLength)
+
+			cache := cache.NewInMemoryCache(time.Hour)
+			// idgenerator := idgenerator.NewMD5Generator(7)
+			idgenerator := idgenerator.NewSnowflakeGenerator()
+			api := NewUrlShortenerAPI(mockRepo, cfg.BaseURL, idgenerator, cache)
 
 			// Create request
 			req := httptest.NewRequest("POST", "/shorten", bytes.NewBufferString(tt.requestBody))
@@ -198,11 +201,11 @@ func TestRedirectHandler(t *testing.T) {
 			tt.mockSetup(mockRepo)
 
 			cfg := &config.Config{
-				BaseURL:         "http://localhost:8080",
-				ShortCodeLength: 7,
-				CacheTTL:        time.Hour,
+				BaseURL: "http://localhost:8080",
 			}
-			api := NewUrlShortenerAPI(mockRepo, cfg, cfg.ShortCodeLength)
+			cache := cache.NewInMemoryCache(time.Hour)
+			idgenerator := idgenerator.NewMD5Generator(7)
+			api := NewUrlShortenerAPI(mockRepo, cfg.BaseURL, idgenerator, cache)
 
 			// Create request with gorilla mux
 			req := httptest.NewRequest("GET", "/"+tt.shortCode, nil)

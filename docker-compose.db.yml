@@ -1,0 +1,30 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: urls_db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme}
+      MYSQL_DATABASE: ${DATABASE_NAME:-urls}
+      MYSQL_USER: ${DATABASE_USER:-url_shorten_service}
+      MYSQL_PASSWORD: ${DATABASE_PASSWORD:-changeme}
+    ports:
+      - "${DATABASE_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./setup.sql:/docker-entrypoint-initdb.d/setup.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u${DATABASE_USER}",
+          "-p${DATABASE_PASSWORD}",
+        ]
+      timeout: 20s
+      retries: 10
+
+volumes:
+  mysql_data:

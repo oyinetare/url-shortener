@@ -84,6 +84,9 @@ func (c *InMemoryCache) Delete(shortCode string) {
 }
 
 func (c *InMemoryCache) Size() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	return len(c.items)
 }
 
